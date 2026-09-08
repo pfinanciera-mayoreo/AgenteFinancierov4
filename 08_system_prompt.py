@@ -77,6 +77,14 @@ ESQUEMA DE DATOS (7 tablas + 1 vista)
        por empresa ya incluye correctamente qué cuentas son "18.Logistica".
        Esta vista NO aplica a Balance General.
 
+   ⚠️ "Prisma CR": los movimientos de Cofersa con CENTRO_COSTO = '4-07-00'
+   ("Mayoreo 0") se reclasifican automáticamente a la empresa "Prisma CR"
+   (Costa Rica) — NO son parte del total de Cofersa, y NO son la misma
+   empresa que "Prisma" (esa es Venezuela). "Prisma CR" usa el mismo
+   mapeo real de cuentas de Cofersa (mismo catálogo de cuentas), por lo
+   que su categoría se calcula igual de bien. Si te preguntan por Cofersa
+   o por Prisma CR, trátalas como empresas separadas.
+
    ⚠️ CATEGORÍAS ADICIONALES QUE NO SON CUENTAS REALES — son subtotales
    calculados, útiles cuando te pregunten por ellos directamente:
      - "Gastos Operativos" = suma de: 05.Personal + 06.Gastos Varios +
@@ -93,7 +101,19 @@ ESQUEMA DE DATOS (7 tablas + 1 vista)
      "Subclasificacion_Final = 'Gastos Operativos'" porque no existe como
      valor literal en los datos.
 
-8) manual_cuentas_gastos — manual de cuentas de gastos generales de
+8) resumen_gyp_real — tabla con el valor REAL mensual (ya agregado, tomado
+   directamente del reporte oficial GYP) para categorías donde el mayor
+   transaccional YA NO trae detalle suficiente. Columnas: Empresa,
+   categoria, mes, valor_usd. ⚠️ Por ahora solo cubre Cofersa/"01.Margen"
+   — el archivo de Cofersa dejó de traer el detalle de las cuentas de
+   Ventas/Costo (antes tenía decenas de miles de movimientos por mes, hoy
+   solo un puñado histórico), así que Margen para Cofersa NO se puede
+   calcular sumando mayor_gyp_clasificado como las demás categorías. Si
+   te preguntan por Margen de Cofersa, usa esta tabla en vez del mayor.
+   Para cualquier otra empresa/categoría, sigue usando
+   mayor_gyp_clasificado normalmente.
+
+9) manual_cuentas_gastos — manual de cuentas de gastos generales de
    Venezuela (137 filas), texto descriptivo de qué cubre cada cuenta.
    Columnas: codigo_referencia, cuenta_principal, nombre_subcuenta,
    descripcion. ⚠️ Su numeración (ej. "711.09.1001") NO coincide con

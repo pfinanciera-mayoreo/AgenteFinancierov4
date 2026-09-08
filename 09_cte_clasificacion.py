@@ -1433,14 +1433,22 @@ def cte_mayor_gyp_clasificado() -> str:
         for empresa in empresas_con_mapeo
     )
 
+    def _condicion_empresa(empresa):
+        # "Prisma CR" son movimientos de Cofersa (CC 4-07-00) reclasificados
+        # a otra entidad — pero usan el MISMO catálogo de cuentas de
+        # Cofersa, así que el mapeo real de Cofersa también debe aplicarles.
+        if empresa == "Cofersa":
+            return "m.Empresa IN ('Cofersa', 'Prisma CR')"
+        return f"m.Empresa = '{empresa}'"
+
     joins_mapeo = "\n    ".join(
         f"LEFT JOIN mapeo_{empresa.lower()} m{empresa[:2].lower()} "
-        f"ON m.Empresa = '{empresa}' AND m.CUENTA_CONTABLE = m{empresa[:2].lower()}.cuenta"
+        f"ON {_condicion_empresa(empresa)} AND m.CUENTA_CONTABLE = m{empresa[:2].lower()}.cuenta"
         for empresa in empresas_con_mapeo
     )
 
     casos_mapeo = "\n            ".join(
-        f"WHEN m.Empresa = '{empresa}' AND m{empresa[:2].lower()}.categoria IS NOT NULL "
+        f"WHEN {_condicion_empresa(empresa)} AND m{empresa[:2].lower()}.categoria IS NOT NULL "
         f"THEN m{empresa[:2].lower()}.categoria"
         for empresa in empresas_con_mapeo
     )
@@ -1448,9 +1456,17 @@ def cte_mayor_gyp_clasificado() -> str:
     return f"""
 WITH {cte_catalogo_expandido()},
 combinado AS (
-    SELECT *, 'ERP' AS Origen_Datos FROM mayor_contable
+    SELECT
+        * EXCLUDE (Empresa),
+        CASE WHEN Empresa = 'Cofersa' AND CENTRO_COSTO = '4-07-00' THEN 'Prisma CR' ELSE Empresa END AS Empresa,
+        'ERP' AS Origen_Datos
+    FROM mayor_contable
     UNION ALL BY NAME
-    SELECT *, 'Planificación' AS Origen_Datos FROM asientos_planificacion
+    SELECT
+        * EXCLUDE (Empresa),
+        CASE WHEN Empresa = 'Cofersa' AND CENTRO_COSTO = '4-07-00' THEN 'Prisma CR' ELSE Empresa END AS Empresa,
+        'Planificación' AS Origen_Datos
+    FROM asientos_planificacion
 ),
 {tablas_mapeo},
 mayor_gyp_clasificado AS (
@@ -1463,7 +1479,8 @@ mayor_gyp_clasificado AS (
         END AS Subclasificacion_Final
     FROM combinado m
     LEFT JOIN catalogo_expandido c
-      ON m.CUENTA_CONTABLE = c.cuenta AND m.Empresa = c.Empresa
+      ON m.CUENTA_CONTABLE = c.cuenta
+     AND (CASE WHEN m.Empresa = 'Prisma CR' THEN 'Cofersa' ELSE m.Empresa END) = c.Empresa
     {joins_mapeo}
 )
 """

@@ -31,9 +31,16 @@ CATEGORIAS_DASHBOARD = CATEGORIAS_RENTA_BRUTA + CATEGORIAS_GASTOS_OPERATIVOS + [
     "Gastos Operativos", "Ganancia Operativa", "Semi Neto",
 ]
 
+# Empresa -> categorías donde el mayor transaccional YA NO trae el detalle
+# necesario (ver 15_cargar_resumen_gyp.py) y hay que usar el valor real
+# directo de la tabla resumen_gyp_real en su lugar.
+CATEGORIAS_SOLO_RESUMEN = {
+    "Cofersa": ["01.Margen"],
+}
+
 EMPRESAS_POR_PAIS = {
     "Colombia": ["Mundial"],
-    "Costa Rica": ["Cofersa"],
+    "Costa Rica": ["Cofersa", "Prisma CR"],
     "Venezuela": ["Febeca", "Beval", "Prisma", "Sillaca"],
 }
 
@@ -87,16 +94,38 @@ def dashboard_gyp(con, empresas: list, moneda: str) -> pd.DataFrame:
     placeholders = ",".join(f"'{e}'" for e in empresas)
 
     sql = f"""
-        SELECT Subclasificacion_Final AS categoria, DATE_TRUNC('month', FECHA) AS mes,
+        SELECT Empresa, Subclasificacion_Final AS categoria, DATE_TRUNC('month', FECHA) AS mes,
                SUM({col_monto}) AS valor,
                SUM(CASE WHEN Origen_Datos = 'ERP' THEN 1 ELSE 0 END) AS conteo
         FROM mayor_gyp_clasificado
         WHERE Empresa IN ({placeholders})
           AND Subclasificacion_Final SIMILAR TO '[0-9].*'
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
     """
     df = con.execute(sql).fetchdf()
     df.loc[df["categoria"].isin(CATEGORIAS_INGRESO), "valor"] *= -1
+
+    # Reemplazar, empresa por empresa, las categorías donde el mayor
+    # transaccional ya no alcanza (ver CATEGORIAS_SOLO_RESUMEN) por el
+    # valor real directo de resumen_gyp_real.
+    for empresa, categorias in CATEGORIAS_SOLO_RESUMEN.items():
+        if empresa not in empresas or not categorias:
+            continue
+        lista_cats = ",".join(f"'{c}'" for c in categorias)
+        df = df[~((df["Empresa"] == empresa) & (df["categoria"].isin(categorias)))]
+        resumen = con.execute(f"""
+            SELECT Empresa, categoria, mes, valor_usd AS valor
+            FROM resumen_gyp_real
+            WHERE Empresa = '{empresa}' AND categoria IN ({lista_cats})
+        """).fetchdf()
+        if moneda != "USD":
+            resumen["valor"] = None  # el resumen real solo viene en USD por ahora
+        resumen["conteo"] = 0
+        df = pd.concat([df, resumen], ignore_index=True)
+
+    df = df.drop(columns=["Empresa"]).groupby(["categoria", "mes"], as_index=False).agg(
+        valor=("valor", "sum"), conteo=("conteo", "sum")
+    )
 
     renta_bruta = df[df["categoria"].isin(CATEGORIAS_RENTA_BRUTA)].groupby("mes")["valor"].sum()
     gastos_operativos = df[df["categoria"].isin(CATEGORIAS_GASTOS_OPERATIVOS)].groupby("mes")["valor"].sum()
