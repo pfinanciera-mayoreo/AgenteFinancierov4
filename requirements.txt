@@ -1,0 +1,6 @@
+streamlit
+duckdb
+pandas
+anthropic
+openpyxl
+python-docx
