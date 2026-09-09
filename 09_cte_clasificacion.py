@@ -1488,6 +1488,7 @@ combinado AS (
         END AS Empresa,
         'Planificación' AS Origen_Datos
     FROM asientos_planificacion
+    WHERE (ASIENTO IS NULL OR ASIENTO <> 'PPDIST')
 ),
 {tabla_mapeo_prisma_cr},
 {tablas_mapeo},
