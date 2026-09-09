@@ -191,6 +191,27 @@ def _contexto_filtros_texto() -> str:
     return f"Estado Financiero: Estado de Resultados (GYP) | País: {pais} | Empresa(s): {emp_txt} | Moneda: {moneda_label}"
 
 
+def _graficar_si_es_tendencia(df: pd.DataFrame):
+    """Grafica automáticamente resultados del chat que parecen una serie
+    de tiempo (tienen una columna de mes/fecha) — así el agente "puede"
+    dar un gráfico de tendencia con solo traer los datos ordenados, sin
+    necesitar generar ninguna imagen él mismo (cosa que no puede hacer)."""
+    if df.empty or len(df) < 2:
+        return
+    columnas_fecha = [c for c in df.columns if any(p in c.lower() for p in ["mes", "fecha", "periodo"])]
+    columnas_numericas = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if not columnas_fecha or not columnas_numericas:
+        return
+    col_x = columnas_fecha[0]
+    try:
+        df_grafico = df.copy()
+        df_grafico[col_x] = pd.to_datetime(df_grafico[col_x])
+        df_grafico = df_grafico.sort_values(col_x).set_index(col_x)
+        st.line_chart(df_grafico[columnas_numericas])
+    except Exception:
+        pass  # si no se puede interpretar como fecha, simplemente no se grafica
+
+
 def _encabezado_con_boton_ia(titulo: str):
     col_titulo, col_boton = st.columns([4, 1])
     with col_titulo:
@@ -265,25 +286,30 @@ elif st.session_state.modo == "detalle_categoria":
             total_mensual = df_cc.groupby("mes", as_index=False)["monto"].sum()
             st.line_chart(total_mensual.set_index("mes")[["monto"]])
             st.caption("Tendencia total de la partida (todos los centros de costo sumados).")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                valores_cc = df_cc["CENTRO_COSTO"].dropna().astype(str).unique().tolist()
-                cc_elegido = st.selectbox("Centro de Costo", ["(todos)"] + sorted(valores_cc))
-            with col_b:
-                meses_disponibles = sorted(df_cc["mes"].dt.strftime("%Y-%m-%d").unique().tolist(), reverse=True)
-                mes_elegido = st.selectbox("Mes", ["(todos)"] + meses_disponibles)
 
-            if cc_elegido != "(todos)":
-                serie_cc = df_cc[df_cc["CENTRO_COSTO"] == cc_elegido].set_index("mes")[["monto"]]
-                st.bar_chart(serie_cc)
+            sin_detalle = set(df_cc["CENTRO_COSTO"].unique()) == {"(sin centro de costo — solo total real)"}
+            if sin_detalle:
+                st.info("Esta partida usa el valor real del reporte oficial directamente — no hay detalle transaccional por centro de costo ni movimientos individuales disponibles para ella.")
+            else:
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    valores_cc = df_cc["CENTRO_COSTO"].dropna().astype(str).unique().tolist()
+                    cc_elegido = st.selectbox("Centro de Costo", ["(todos)"] + sorted(valores_cc))
+                with col_b:
+                    meses_disponibles = sorted(df_cc["mes"].dt.strftime("%Y-%m-%d").unique().tolist(), reverse=True)
+                    mes_elegido = st.selectbox("Mes", ["(todos)"] + meses_disponibles)
 
-            with st.spinner("Buscando movimientos..."):
-                top = detalle.top_movimientos(
-                    con_db, empresas, categoria, moneda,
-                    centro_costo=None if cc_elegido == "(todos)" else cc_elegido,
-                    mes=None if mes_elegido == "(todos)" else mes_elegido,
-                )
-            st.dataframe(top, hide_index=True, use_container_width=True)
+                if cc_elegido != "(todos)":
+                    serie_cc = df_cc[df_cc["CENTRO_COSTO"] == cc_elegido].set_index("mes")[["monto"]]
+                    st.bar_chart(serie_cc)
+
+                with st.spinner("Buscando movimientos..."):
+                    top = detalle.top_movimientos(
+                        con_db, empresas, categoria, moneda,
+                        centro_costo=None if cc_elegido == "(todos)" else cc_elegido,
+                        mes=None if mes_elegido == "(todos)" else mes_elegido,
+                    )
+                st.dataframe(top, hide_index=True, use_container_width=True)
 
     with tab2:
         serie = df_cc.groupby("mes", as_index=False)["monto"].sum() if not df_cc.empty else pd.DataFrame(columns=["mes", "monto"])
@@ -327,7 +353,9 @@ else:
                 st.markdown(m["contenido"])
                 exitosos = [i for i in m["sql_ejecutados"] if i["resultado"]["ok"]]
                 if exitosos and exitosos[-1]["resultado"]["filas"]:
-                    st.dataframe(pd.DataFrame(exitosos[-1]["resultado"]["filas"]), width="stretch")
+                    df_resultado = pd.DataFrame(exitosos[-1]["resultado"]["filas"])
+                    st.dataframe(df_resultado, width="stretch")
+                    _graficar_si_es_tendencia(df_resultado)
                 with st.expander(f"🔍 Ver SQL ejecutado ({len(m['sql_ejecutados'])} consulta(s))"):
                     for item in m["sql_ejecutados"]:
                         st.code(item["query"], language="sql")
@@ -358,7 +386,9 @@ else:
             st.markdown(resultado["respuesta"])
             exitosos = [i for i in resultado["sql_ejecutados"] if i["resultado"]["ok"]]
             if exitosos and exitosos[-1]["resultado"]["filas"]:
-                st.dataframe(pd.DataFrame(exitosos[-1]["resultado"]["filas"]), width="stretch")
+                df_resultado = pd.DataFrame(exitosos[-1]["resultado"]["filas"])
+                st.dataframe(df_resultado, width="stretch")
+                _graficar_si_es_tendencia(df_resultado)
             if resultado["sql_ejecutados"]:
                 with st.expander(f"🔍 Ver SQL ejecutado ({len(resultado['sql_ejecutados'])} consulta(s))"):
                     for item in resultado["sql_ejecutados"]:

@@ -31,6 +31,9 @@ MODELO = "claude-sonnet-5"  # buen balance costo/calidad para text-to-SQL; ver d
 MAX_VUELTAS_DE_HERRAMIENTA = 8  # subido de 5 a 8: preguntas que necesitan desambiguar
 # una categoría (ej. "Personal" tiene 4 variantes) Y comparar 2+ meses pueden
 # necesitar más de 5 idas-y-vueltas antes de tener todo lo necesario.
+MAX_TOKENS_RESPUESTA = 4096  # subido de 2000: preguntas con varias partes (variación
+# mensual + interanual + causas + gráfico) necesitan más espacio para el análisis
+# final en texto, si no se corta antes de terminar de explicar.
 
 # --- Definición de la herramienta que Claude puede usar ---
 # Esto NO es código que se ejecuta: es una "ficha técnica" en formato que la
@@ -91,7 +94,7 @@ def preguntar_al_agente(pregunta_usuario: str, api_key: str, workspace_id: str =
     for _ in range(MAX_VUELTAS_DE_HERRAMIENTA):
         respuesta = client.messages.create(
             model=MODELO,
-            max_tokens=2000,
+            max_tokens=MAX_TOKENS_RESPUESTA,
             system=SYSTEM_PROMPT_AGENTE_FINANCIERO_V2,
             tools=HERRAMIENTAS,
             messages=mensajes,

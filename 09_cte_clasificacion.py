@@ -1432,11 +1432,22 @@ def cte_mayor_gyp_clasificado() -> str:
 )"""
         for empresa in empresas_con_mapeo
     )
+    tabla_mapeo_prisma_cr = """mapeo_prisma_cr (cuenta, categoria) AS (
+    VALUES
+    ('9.1.2.02.1.001', '09.Cargo Fijo'),
+    ('9.1.2.03.1.001', '05.Personal'),
+    ('9.1.2.01.1.001', '05.Personal'),
+    ('9.1.2.03.1.002', '06.Gastos Varios'),
+    ('9.1.2.01.1.002', '06.Gastos Varios'),
+    ('9.1.2.03.1.003', '09.Cargo Fijo')
+)"""
 
     def _condicion_empresa(empresa):
-        # "Prisma CR" son movimientos de Cofersa (CC 4-07-00) reclasificados
-        # a otra entidad — pero usan el MISMO catálogo de cuentas de
-        # Cofersa, así que el mapeo real de Cofersa también debe aplicarles.
+        # "Prisma CR" son movimientos de Cofersa (CC 4-07-00) o de las 6
+        # cuentas de consolidación (ver mapeo_prisma_cr) reclasificados a
+        # otra entidad — pero las que vienen de Cofersa usan el MISMO
+        # catálogo de cuentas de Cofersa, así que su mapeo real también
+        # debe aplicarles como respaldo.
         if empresa == "Cofersa":
             return "m.Empresa IN ('Cofersa', 'Prisma CR')"
         return f"m.Empresa = '{empresa}'"
@@ -1453,27 +1464,39 @@ def cte_mayor_gyp_clasificado() -> str:
         for empresa in empresas_con_mapeo
     )
 
+    cuentas_prisma_cr = "'9.1.2.02.1.001','9.1.2.03.1.001','9.1.2.01.1.001','9.1.2.03.1.002','9.1.2.01.1.002','9.1.2.03.1.003'"
+
     return f"""
 WITH {cte_catalogo_expandido()},
 combinado AS (
     SELECT
         * EXCLUDE (Empresa),
-        CASE WHEN Empresa = 'Cofersa' AND CENTRO_COSTO = '4-07-00' THEN 'Prisma CR' ELSE Empresa END AS Empresa,
+        CASE
+            WHEN Empresa = 'Cofersa' AND CENTRO_COSTO = '4-07-00' THEN 'Prisma CR'
+            WHEN Empresa IN ('Cofersa', 'Prisma') AND CUENTA_CONTABLE IN ({cuentas_prisma_cr}) THEN 'Prisma CR'
+            ELSE Empresa
+        END AS Empresa,
         'ERP' AS Origen_Datos
     FROM mayor_contable
     UNION ALL BY NAME
     SELECT
         * EXCLUDE (Empresa),
-        CASE WHEN Empresa = 'Cofersa' AND CENTRO_COSTO = '4-07-00' THEN 'Prisma CR' ELSE Empresa END AS Empresa,
+        CASE
+            WHEN Empresa = 'Cofersa' AND CENTRO_COSTO = '4-07-00' THEN 'Prisma CR'
+            WHEN Empresa IN ('Cofersa', 'Prisma') AND CUENTA_CONTABLE IN ({cuentas_prisma_cr}) THEN 'Prisma CR'
+            ELSE Empresa
+        END AS Empresa,
         'Planificación' AS Origen_Datos
     FROM asientos_planificacion
 ),
+{tabla_mapeo_prisma_cr},
 {tablas_mapeo},
 mayor_gyp_clasificado AS (
     SELECT
         m.*,
         c.Subclasificacion_2 AS Subclasificacion_2,
         CASE
+            WHEN m.Empresa = 'Prisma CR' AND mpcr.categoria IS NOT NULL THEN mpcr.categoria
             {casos_mapeo}
             ELSE c.Subclasificacion_2
         END AS Subclasificacion_Final
@@ -1481,6 +1504,8 @@ mayor_gyp_clasificado AS (
     LEFT JOIN catalogo_expandido c
       ON m.CUENTA_CONTABLE = c.cuenta
      AND (CASE WHEN m.Empresa = 'Prisma CR' THEN 'Cofersa' ELSE m.Empresa END) = c.Empresa
+    LEFT JOIN mapeo_prisma_cr mpcr
+      ON m.Empresa = 'Prisma CR' AND m.CUENTA_CONTABLE = mpcr.cuenta
     {joins_mapeo}
 )
 """
