@@ -27,7 +27,7 @@ sql_tool = import_module("07_sql_tool")  # reutilizamos ejecutar_sql_seguro
 from importlib import import_module as _im
 SYSTEM_PROMPT_AGENTE_FINANCIERO_V2 = _im("08_system_prompt").SYSTEM_PROMPT_AGENTE_FINANCIERO_V2
 
-MODELO = "claude-sonnet-5"  # buen balance costo/calidad para text-to-SQL; ver docs.claude.com si quieres comparar con claude-haiku-4-5 (más barato) u opus-5 (más capaz)
+MODELO = "claude-haiku-4-5-20251001"  # cambiado de Sonnet a Haiku: más rápido y económico para text-to-SQL
 MAX_VUELTAS_DE_HERRAMIENTA = 8  # subido de 5 a 8: preguntas que necesitan desambiguar
 # una categoría (ej. "Personal" tiene 4 variantes) Y comparar 2+ meses pueden
 # necesitar más de 5 idas-y-vueltas antes de tener todo lo necesario.
